@@ -208,6 +208,7 @@ class CAR(Platforms):
     GMCarSpecs(mass=1607, wheelbase=2.69, steerRatio=17.7, centerToFrontRatio=0.45, tireStiffnessFactor=1.0),
   )
   CADILLAC_XT5_CC = GMPlatformConfig(
+    "Cadillac XT5 No ACC",
     [GMCarDocs("Cadillac XT5 No ACC")],
     CarSpecs(mass=1810, wheelbase=2.86, steerRatio=16.34, centerToFrontRatio=0.5),
   )
