@@ -207,6 +207,10 @@ class CAR(Platforms):
     [GMCarDocs("Chevrolet Volt 2017-18")],
     GMCarSpecs(mass=1607, wheelbase=2.69, steerRatio=17.7, centerToFrontRatio=0.45, tireStiffnessFactor=1.0),
   )
+  CADILLAC_XT5_CC = GMPlatformConfig(
+    [GMCarDocs("Cadillac XT5 No ACC")],
+    CarSpecs(mass=1810, wheelbase=2.86, steerRatio=16.34, centerToFrontRatio=0.5),
+  )
   BOLT_CC = GMPlatformConfig(
     "CHEVROLET BOLT EV NO ACC",
     [GMCarDocs("Chevrolet Bolt No ACC")],
@@ -343,7 +347,7 @@ FW_QUERY_CONFIG = FwQueryConfig(
 )
 
 EV_CAR = {CAR.VOLT, CAR.BOLT_EUV, CAR.VOLT_CC, CAR.BOLT_CC}
-CC_ONLY_CAR = {CAR.VOLT_CC, CAR.BOLT_CC, CAR.EQUINOX_CC, CAR.SUBURBAN_CC, CAR.YUKON_CC, CAR.CT6_CC, CAR.TRAILBLAZER_CC, CAR.MALIBU_CC}
+CC_ONLY_CAR = {CAR.VOLT_CC, CAR.BOLT_CC, CAR.EQUINOX_CC, CAR.SUBURBAN_CC, CAR.YUKON_CC, CAR.CT6_CC, CAR.TRAILBLAZER_CC, CAR.MALIBU_CC,CAR.CADILLAC_XT5_CC}
 
 # We're integrated at the Safety Data Gateway Module on these cars
 SDGM_CAR = {CAR.XT4, CAR.BABYENCLAVE}
@@ -353,7 +357,7 @@ SLOW_ACC = {CAR.SILVERADO}
 
 # We're integrated at the camera with VOACC on these cars (instead of ASCM w/ OBD-II harness)
 CAMERA_ACC_CAR = {CAR.BOLT_EUV, CAR.SILVERADO, CAR.EQUINOX, CAR.TRAILBLAZER, CAR.TRAX}
-CAMERA_ACC_CAR.update({CAR.VOLT_CC, CAR.BOLT_CC, CAR.EQUINOX_CC, CAR.YUKON_CC, CAR.CT6_CC, CAR.TRAILBLAZER_CC, CAR.MALIBU_CC})
+CAMERA_ACC_CAR.update({CAR.VOLT_CC, CAR.BOLT_CC, CAR.EQUINOX_CC, CAR.YUKON_CC, CAR.CT6_CC, CAR.TRAILBLAZER_CC, CAR.MALIBU_CC,CAR.CADILLAC_XT5_CC})
 
 STEER_THRESHOLD = 1.0
 
