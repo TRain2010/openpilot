@@ -29,21 +29,20 @@ import subprocess
 
 import openpilot.system.sentry as sentry
 
-from datetime import datetime
 from pathlib import Path
 from typing import List
 from urllib.parse import quote
 
 from openpilot.common.params import ParamKeyType
 from openpilot.selfdrive.car.toyota.carcontroller import LOCK_CMD, UNLOCK_CMD
-from openpilot.system.hardware import HARDWARE, PC
+from openpilot.system.hardware import PC
 from openpilot.system.hardware.hw import Paths
 from openpilot.system.loggerd.uploader import listdir_by_creation
 from openpilot.system.loggerd.xattr_cache import getxattr
 from panda import Panda
 from tools.lib.route import SegmentName
 
-from openpilot.selfdrive.frogpilot.frogpilot_variables import CRASHES_DIR, params, update_frogpilot_toggles
+from openpilot.selfdrive.frogpilot.frogpilot_variables import params, update_frogpilot_toggles
 
 XOR_KEY = "s8#pL3*Xj!aZ@dWq"
 
@@ -61,11 +60,9 @@ PRESERVE_COUNT = 5
 if PC:
   SCREENRECORD_PATH = os.path.join(str(Path.home()), ".comma", "media", "screen_recordings", "")
   ERROR_LOGS_PATH = os.path.join(str(Path.home()), ".comma", "community", "crashes", "")
-  TMUX_LOGS_PATH = os.path.join(str(Path.home()), ".comma", "tmux_logs")
 else:
   SCREENRECORD_PATH = "/data/media/screen_recordings/"
-  ERROR_LOGS_PATH = CRASHES_DIR
-  TMUX_LOGS_PATH = "/data/tmux_logs/"
+  ERROR_LOGS_PATH = sentry.CRASHES_DIR
 
 
 def list_files(path): # still used for footage
@@ -230,24 +227,23 @@ def get_nav_active():
     return False
 
 def get_amap_key():
-  token = params.get("AMapKey1", encoding='utf8')
-  token2 = params.get("AMapKey2", encoding='utf8')
-  return (token.strip() if token else None, token2.strip() if token2 else None)
+  return (
+    token.strip() if (token := params.get("AMapKey1", encoding='utf8')) != "0" else None,
+    token2.strip() if (token2 := params.get("AMapKey2", encoding='utf8')) != "0" else None
+  )
 
 def get_gmap_key():
-  token = params.get("GMapKey", encoding='utf8')
-  return token.strip() if token else None
+  return token.strip() if (token := params.get("GMapKey", encoding='utf8')) != "0" else None
 
 def get_public_token():
-  token = params.get("MapboxPublicKey", encoding='utf8')
-  return token.strip() if token and token.startswith("pk") else None
+  return token.strip() if (token := params.get("MapboxPublicKey", encoding='utf8')).startswith("pk") else None
 
-def get_secret_token():
-  token = params.get("MapboxSecretKey", encoding='utf8')
-  return token.strip() if token and token.startswith("sk") else None
+def get_app_token():
+  return token.strip() if (token := params.get("MapboxSecretKey", encoding='utf8')).startswith("sk") else None
 
-def get_search_input():
-  return params.get_int("SearchInput")
+def get_SearchInput():
+  SearchInput = params.get_int("SearchInput")
+  return SearchInput
 
 def get_last_lon_lat():
   last_pos = params.get("LastGPSPosition")
@@ -471,10 +467,6 @@ def get_all_toggle_values():
 
   return encode_parameters(toggle_values)
 
-def reset_toggle_values():
-  params.put_bool("DoToggleReset", True)
-  HARDWARE.reboot()
-
 def store_toggle_values(request_data):
   excluded_keys = [
     "ApiCache_NavDestinations", "CalibrationParams", "CarParamsPersistent",
@@ -490,27 +482,6 @@ def store_toggle_values(request_data):
 
   update_frogpilot_toggles()
 
-def capture_tmux_log():
-  os.makedirs(TMUX_LOGS_PATH, exist_ok=True)
-
-  timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-  log_filename = f"tmux_log_{timestamp}.txt"
-  log_path = os.path.join(TMUX_LOGS_PATH, log_filename)
-
-  try:
-    subprocess.run(["tmux", "capture-pane", "-J", "-S", "-"], check=True)
-    result = subprocess.run(["tmux", "show-buffer"], capture_output=True, text=True, check=True)
-
-    with open(log_path, "w", encoding="utf-8") as log_file:
-      log_file.write(result.stdout)
-
-    subprocess.run(["tmux", "delete-buffer"], check=True)
-
-    return log_filename
-
-  except subprocess.CalledProcessError as e:
-    raise Exception(f"Error capturing tmux log: {e}")
-
 def lock_doors():
   panda = Panda()
   panda.set_safety_mode(panda.SAFETY_ALLOUTPUT)
@@ -524,6 +495,3 @@ def unlock_doors():
   panda.can_send(0x750, UNLOCK_CMD, 0)
   panda.set_safety_mode(panda.SAFETY_TOYOTA)
   panda.send_heartbeat()
-
-def reboot_device():
-  HARDWARE.reboot()

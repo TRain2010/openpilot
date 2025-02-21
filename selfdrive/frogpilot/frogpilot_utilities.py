@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import http.client
 import json
 import math
 import numpy as np
@@ -12,17 +13,18 @@ import zipfile
 import openpilot.system.sentry as sentry
 
 from pathlib import Path
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 
 from cereal import log
+from openpilot.common.numpy_fast import interp
 from openpilot.common.realtime import DT_DMON, DT_HW
 from openpilot.selfdrive.car.toyota.carcontroller import LOCK_CMD
 from openpilot.system.hardware import HARDWARE
 from panda import Panda
 
-from openpilot.selfdrive.frogpilot.frogpilot_variables import EARTH_RADIUS, MAPD_PATH, MAPS_PATH, params, params_memory
+from openpilot.selfdrive.frogpilot.frogpilot_variables import MAPD_PATH, MAPS_PATH, params, params_memory
 
-running_threads = {}
+EARTH_RADIUS = 6378137  # Radius of the Earth in meters
 
 locks = {
   "backup_toggles": threading.Lock(),
@@ -31,13 +33,14 @@ locks = {
   "download_theme": threading.Lock(),
   "flash_panda": threading.Lock(),
   "lock_doors": threading.Lock(),
-  "send_sentry_reports": threading.Lock(),
   "update_checks": threading.Lock(),
   "update_maps": threading.Lock(),
   "update_models": threading.Lock(),
   "update_openpilot": threading.Lock(),
   "update_themes": threading.Lock()
 }
+
+running_threads = {}
 
 def run_thread_with_lock(name, target, args=()):
   if not running_threads.get(name, threading.Thread()).is_alive():
@@ -65,8 +68,8 @@ def calculate_lane_width(lane, current_lane, road_edge):
   current_x = np.array(current_lane.x)
   current_y = np.array(current_lane.y)
 
-  lane_y_interp = np.interp(current_x, np.array(lane.x), np.array(lane.y))
-  road_edge_y_interp = np.interp(current_x, np.array(road_edge.x), np.array(road_edge.y))
+  lane_y_interp = interp(current_x, np.array(lane.x), np.array(lane.y))
+  road_edge_y_interp = interp(current_x, np.array(road_edge.x), np.array(road_edge.y))
 
   distance_to_lane = np.mean(np.abs(current_y - lane_y_interp))
   distance_to_road_edge = np.mean(np.abs(current_y - road_edge_y_interp))
@@ -101,7 +104,7 @@ def extract_zip(zip_file, extract_path):
   print(f"Extracting {zip_file} to {extract_path}")
 
   try:
-    with zipfile.ZipFile(zip_file, "r") as zip_ref:
+    with zipfile.ZipFile(zip_file, 'r') as zip_ref:
       zip_ref.extractall(extract_path)
     zip_file.unlink()
     print(f"Extraction completed: {zip_file} has been removed")
@@ -111,7 +114,6 @@ def extract_zip(zip_file, extract_path):
 
 def flash_panda():
   HARDWARE.reset_internal_panda()
-  Panda().wait_for_panda(None, 30)
   params_memory.put_bool("FlashPanda", False)
 
 def is_url_pingable(url, timeout=5):
@@ -119,25 +121,35 @@ def is_url_pingable(url, timeout=5):
     request = urllib.request.Request(
       url,
       headers={
-        "User-Agent": "Mozilla/5.0 (compatible; Python urllib)",
-        "Accept": "*/*",
-        "Connection": "keep-alive"
+        'User-Agent': 'Mozilla/5.0 (compatible; Python urllib)',
+        'Accept': '*/*',
+        'Connection': 'keep-alive'
       }
     )
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-      return response.status == 200
+    urllib.request.urlopen(request, timeout=timeout)
+    return True
+  except TimeoutError:
+    print(f"TimeoutError: The operation timed out for {url}")
+    return False
+  except http.client.RemoteDisconnected:
+    print(f"RemoteDisconnected: The server closed the connection without responding for {url}")
+    return False
+  except URLError as error:
+    print(f"URLError encountered for {url}: {error}")
+    return False
   except Exception as error:
-    print(f"Unexpected error when pinging {url}: {error}")
-  return False
+    print(f"Failed to ping {url}: {error}")
+    sentry.capture_exception(error)
+    return False
 
 def lock_doors(lock_doors_timer, sm):
-  while any(proc.name == "dmonitoringd" and proc.running for proc in sm["managerState"].processes):
+  while any(proc.name == "dmonitoringd" and proc.running for proc in sm['managerState'].processes):
     time.sleep(DT_HW)
     sm.update()
 
   params.put_bool("IsDriverViewEnabled", True)
 
-  while not any(proc.name == "dmonitoringd" and proc.running for proc in sm["managerState"].processes):
+  while not any(proc.name == "dmonitoringd" and proc.running for proc in sm['managerState'].processes):
     time.sleep(DT_HW)
     sm.update()
 
@@ -147,11 +159,10 @@ def lock_doors(lock_doors_timer, sm):
     if elapsed_time >= lock_doors_timer:
       break
 
-    if any(ps.ignitionLine or ps.ignitionCan for ps in sm["pandaStates"] if ps.pandaType != log.PandaState.PandaType.unknown):
-      params.remove("IsDriverViewEnabled")
-      return
+    if any(ps.ignitionLine or ps.ignitionCan for ps in sm['pandaStates'] if ps.pandaType != log.PandaState.PandaType.unknown):
+      break
 
-    if sm["driverMonitoringState"].faceDetected or not sm.alive["driverMonitoringState"]:
+    if sm['driverMonitoringState'].faceDetected or not sm.alive['driverMonitoringState']:
       start_time = time.monotonic()
 
     time.sleep(DT_DMON)
@@ -174,23 +185,12 @@ def run_cmd(cmd, success_message, fail_message):
     print(fail_message)
     sentry.capture_exception(error)
 
-def send_sentry_reports(frogpilot_toggles, frogpilot_variables, params, params_tracking):
-  if params.get_bool("UserLogged"):
-    return
-
-  while not is_url_pingable("https://sentry.io"):
-    time.sleep(1)
-
-  sentry.capture_user_report(frogpilot_variables.short_branch, frogpilot_toggles, params, params_tracking)
-
-  params.put_bool("UserLogged", True)
-
 def update_maps(now):
   while not MAPD_PATH.exists():
     time.sleep(60)
 
-  maps_selected = json.loads(params.get("MapsSelected", encoding="utf-8") or "{}")
-  if not (maps_selected.get("nations") or maps_selected.get("states")):
+  maps_selected = json.loads(params.get("MapsSelected", encoding='utf8') or "{}")
+  if not maps_selected.get("nations") and not maps_selected.get("states"):
     return
 
   day = now.day
@@ -205,13 +205,13 @@ def update_maps(now):
   suffix = "th" if 4 <= day <= 20 or 24 <= day <= 30 else ["st", "nd", "rd"][day % 10 - 1]
   todays_date = now.strftime(f"%B {day}{suffix}, %Y")
 
-  if maps_downloaded and params.get("LastMapsUpdate", encoding="utf-8") == todays_date:
+  if maps_downloaded and params.get("LastMapsUpdate", encoding='utf-8') == todays_date:
     return
 
-  if params.get("OSMDownloadProgress", encoding="utf-8") is None:
+  if params.get("OSMDownloadProgress", encoding='utf-8') is None:
     params_memory.put("OSMDownloadLocations", json.dumps(maps_selected))
 
-  while params.get("OSMDownloadProgress", encoding="utf-8") is not None:
+  while params.get("OSMDownloadProgress", encoding='utf-8') is not None:
     time.sleep(60)
 
   params.put("LastMapsUpdate", todays_date)
@@ -221,20 +221,17 @@ def update_openpilot(manually_updated, frogpilot_toggles):
     return
 
   subprocess.run(["pkill", "-SIGUSR1", "-f", "system.updated.updated"], check=False)
-  while not params.get("UpdaterState", encoding="utf-8") == "checking...":
-    time.sleep(DT_HW)
-  while params.get("UpdaterState", encoding="utf-8") == "checking...":
-    time.sleep(DT_HW)
+  time.sleep(60)
 
   if not params.get_bool("UpdaterFetchAvailable"):
     return
 
-  while params.get("UpdaterState", encoding="utf-8") != "idle":
-    time.sleep(DT_HW)
+  while params.get("UpdaterState", encoding="utf8") != "idle":
+    time.sleep(60)
 
   subprocess.run(["pkill", "-SIGHUP", "-f", "system.updated.updated"], check=False)
   while not params.get_bool("UpdateAvailable"):
-    time.sleep(DT_HW)
+    time.sleep(60)
 
   while params.get_bool("IsOnroad") or running_threads.get("lock_doors", threading.Thread()).is_alive():
     time.sleep(60)

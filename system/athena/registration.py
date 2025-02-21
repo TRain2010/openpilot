@@ -2,6 +2,7 @@
 import time
 import json
 import jwt
+import os
 import random
 import string
 from pathlib import Path
@@ -31,7 +32,6 @@ def register(show_spinner=False) -> str | None:
   HardwareSerial = params.get("HardwareSerial", encoding='utf8')
   dongle_id: str | None = params.get("DongleId", encoding='utf8')
   needs_registration = None in (IMEI, HardwareSerial, dongle_id)
-  needs_registration |= dongle_id == UNREGISTERED_DONGLE_ID
 
   pubkey = Path(Paths.persist_root()+"/comma/id_rsa.pub")
   if not pubkey.is_file():
@@ -87,8 +87,7 @@ def register(show_spinner=False) -> str | None:
         time.sleep(backoff)
 
       if time.monotonic() - start_time > 60 and show_spinner:
-        dongle_id = UNREGISTERED_DONGLE_ID
-        break
+        spinner.update(f"registering device - serial: {serial}, IMEI: ({imei1}, {imei2})")
 
     if show_spinner:
       spinner.close()

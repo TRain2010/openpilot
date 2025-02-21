@@ -36,8 +36,8 @@ def manager_init() -> None:
 
   # FrogPilot variables
   setup_frogpilot(build_metadata)
-  params_cache = Params("/cache")
-  convert_params(params_cache)
+  params_storage = Params("/persist/params")
+  convert_params(params_storage)
 
   default_params: list[tuple[str, str | bytes]] = [
     ("AlwaysOnDM", "0"),
@@ -75,15 +75,15 @@ def manager_init() -> None:
   reset_toggles = params.get_bool("DoToggleReset")
   for k, v in default_params + [(k, v) for k, v, _ in frogpilot_default_params]:
     if params.get(k) is None or reset_toggles:
-      if params_cache.get(k) is None or reset_toggles:
+      if params_storage.get(k) is None or reset_toggles:
         params.put(k, v)
-        params_cache.remove(k)
+        params_storage.remove(k)
       else:
-        params.put(k, params_cache.get(k))
+        params.put(k, params_storage.get(k))
     else:
-      params_cache.put(k, params.get(k))
+      params_storage.put(k, params.get(k))
   params.remove("DoToggleReset")
-  frogpilot_boot_functions(build_metadata, params_cache)
+  frogpilot_boot_functions(build_metadata, params_storage)
 
   # Create folders needed for msgq
   try:
@@ -164,7 +164,7 @@ def manager_thread() -> None:
   pm = messaging.PubMaster(['managerState'])
 
   write_onroad_params(False, params)
-  ensure_running(managed_processes.values(), False, params=params, CP=sm['carParams'], not_run=ignore, classic_model=False, tinygrad_model=False, frogpilot_toggles=get_frogpilot_toggles())
+  ensure_running(managed_processes.values(), False, params=params, CP=sm['carParams'], not_run=ignore, classic_model=False, frogpilot_toggles=get_frogpilot_toggles())
 
   started_prev = False
 
@@ -172,7 +172,6 @@ def manager_thread() -> None:
   frogpilot_toggles = get_frogpilot_toggles()
 
   classic_model = frogpilot_toggles.classic_model
-  tinygrad_model = frogpilot_toggles.tinygrad_model
 
   while True:
     sm.update(1000)
@@ -184,7 +183,6 @@ def manager_thread() -> None:
 
       # FrogPilot variables
       classic_model = frogpilot_toggles.classic_model
-      tinygrad_model = frogpilot_toggles.tinygrad_model
 
     elif not started and started_prev:
       params.clear_all(ParamKeyType.CLEAR_ON_OFFROAD_TRANSITION)
@@ -196,7 +194,7 @@ def manager_thread() -> None:
 
     started_prev = started
 
-    ensure_running(managed_processes.values(), started, params=params, CP=sm['carParams'], not_run=ignore, classic_model=classic_model, tinygrad_model=tinygrad_model, frogpilot_toggles=frogpilot_toggles)
+    ensure_running(managed_processes.values(), started, params=params, CP=sm['carParams'], not_run=ignore, classic_model=classic_model, frogpilot_toggles=frogpilot_toggles)
 
     running = ' '.join("{}{}\u001b[0m".format("\u001b[32m" if p.proc.is_alive() else "\u001b[31m", p.name)
                        for p in managed_processes.values() if p.proc)

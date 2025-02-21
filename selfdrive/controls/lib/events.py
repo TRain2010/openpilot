@@ -1083,7 +1083,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
   },
 
   EventName.openpilotCrashed: {
-    ET.IMMEDIATE_DISABLE: Alert(
+    ET.PERMANENT: Alert(
       "openpilot crashed",
       "Please post the 'Error Log' in the FrogPilot Discord!",
       AlertStatus.normal, AlertSize.mid,
@@ -1200,7 +1200,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
   },
 
   EventName.openpilotCrashedRandomEvent: {
-    ET.IMMEDIATE_DISABLE: Alert(
+    ET.PERMANENT: Alert(
       "openpilot crashed 💩",
       "Please post the 'Error Log' in the FrogPilot Discord!",
       AlertStatus.normal, AlertSize.mid,

@@ -93,34 +93,34 @@ def fill_model_msg(msg: capnp._DynamicStructBuilder, net_output_data: dict[str, 
 
   # lane lines
   modelV2.init('laneLines', 6)
-  road_edge_stds = net_output_data['road_edges_stds'][0,:,0,0]
+  lane_probs = net_output_data['lane_lines_prob'][0,1::2].tolist()
   for i in range(6):
     lane_line = modelV2.laneLines[i]
     if i < 4:
       fill_xyzt(lane_line, PLAN_T_IDXS, np.array(ModelConstants.X_IDXS), net_output_data['lane_lines'][0,i,:,0], net_output_data['lane_lines'][0,i,:,1])
     elif i == 4:
-      if road_edge_stds[0] >= 0.5:
+      if lane_probs[0] > 0:
         leftLane_x = 0.5 * (net_output_data['lane_lines'][0,0,:,0] + net_output_data['lane_lines'][0,1,:,0])
         leftLane_y = 0.5 * (net_output_data['lane_lines'][0,0,:,1] + net_output_data['lane_lines'][0,1,:,1])
         fill_xyzt(lane_line, PLAN_T_IDXS, np.array(ModelConstants.X_IDXS), leftLane_x, leftLane_y)
       else:
-        fill_xyzt(lane_line, PLAN_T_IDXS, np.empty((0,)), np.empty((0,)), np.empty((0,)))
+        fill_xyzt(lane_line, PLAN_T_IDXS, np.array(ModelConstants.X_IDXS), np.empty(ModelConstants.IDX_N), np.empty(ModelConstants.IDX_N))
     elif i == 5:
-      if road_edge_stds[1] >= 0.5:
+      if lane_probs[3] > 0:
         rightLane_x = 0.5 * (net_output_data['lane_lines'][0,2,:,0] + net_output_data['lane_lines'][0,3,:,0])
         rightLane_y = 0.5 * (net_output_data['lane_lines'][0,2,:,1] + net_output_data['lane_lines'][0,3,:,1])
         fill_xyzt(lane_line, PLAN_T_IDXS, np.array(ModelConstants.X_IDXS), rightLane_x, rightLane_y)
       else:
-        fill_xyzt(lane_line, PLAN_T_IDXS, np.empty((0,)), np.empty((0,)), np.empty((0,)))
+        fill_xyzt(lane_line, PLAN_T_IDXS, np.array(ModelConstants.X_IDXS), np.empty(ModelConstants.IDX_N), np.empty(ModelConstants.IDX_N))
   modelV2.laneLineStds = net_output_data['lane_lines_stds'][0,:,0,0].tolist()
-  modelV2.laneLineProbs = net_output_data['lane_lines_prob'][0,1::2].tolist()
+  modelV2.laneLineProbs = lane_probs
 
   # road edges
   modelV2.init('roadEdges', 2)
   for i in range(2):
     road_edge = modelV2.roadEdges[i]
     fill_xyzt(road_edge, PLAN_T_IDXS, np.array(ModelConstants.X_IDXS), net_output_data['road_edges'][0,i,:,0], net_output_data['road_edges'][0,i,:,1])
-  modelV2.roadEdgeStds = road_edge_stds.tolist()
+  modelV2.roadEdgeStds = net_output_data['road_edges_stds'][0,:,0,0].tolist()
 
   # leads
   modelV2.init('leadsV3', 3)
@@ -155,10 +155,10 @@ def fill_model_msg(msg: capnp._DynamicStructBuilder, net_output_data: dict[str, 
 
   # temporal pose
   temporal_pose = modelV2.temporalPose
-  temporal_pose.trans = net_output_data['sim_pose'][0,:ModelConstants.POSE_WIDTH//2].tolist()
-  temporal_pose.transStd = net_output_data['sim_pose_stds'][0,:ModelConstants.POSE_WIDTH//2].tolist()
-  temporal_pose.rot = net_output_data['sim_pose'][0,ModelConstants.POSE_WIDTH//2:].tolist()
-  temporal_pose.rotStd = net_output_data['sim_pose_stds'][0,ModelConstants.POSE_WIDTH//2:].tolist()
+  temporal_pose.trans = net_output_data['sim_pose'][0,:3].tolist()
+  temporal_pose.transStd = net_output_data['sim_pose_stds'][0,:3].tolist()
+  temporal_pose.rot = net_output_data['sim_pose'][0,3:].tolist()
+  temporal_pose.rotStd = net_output_data['sim_pose_stds'][0,3:].tolist()
 
   # confidence
   if vipc_frame_id % (2*ModelConstants.MODEL_FREQ) == 0:

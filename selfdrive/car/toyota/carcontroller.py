@@ -89,6 +89,7 @@ class CarController(CarControllerBase):
     self.secoc_prev_reset_counter = 0
 
     # FrogPilot variables
+    self.stock_integral_gain = self.long_pid._k_i
     self.stock_max_accel = self.params.ACCEL_MAX
 
     self.doors_locked = False
@@ -98,6 +99,11 @@ class CarController(CarControllerBase):
     self.previous_set_speed = 0
 
   def update(self, CC, CS, now_nanos, frogpilot_toggles):
+    if frogpilot_toggles.frogsgomoo_tweak:
+      self.long_pid._k_i = [frogpilot_toggles.kiBP, frogpilot_toggles.kiV]
+    else:
+      self.long_pid._k_i = self.stock_integral_gain
+
     if frogpilot_toggles.sport_plus:
       self.params.ACCEL_MAX = min(frogpilot_toggles.max_desired_acceleration, get_max_allowed_accel(CS.out.vEgo))
       self.long_pid.pos_limit = self.params.ACCEL_MAX
@@ -249,9 +255,8 @@ class CarController(CarControllerBase):
           pcm_accel_cmd = rate_limit(pcm_accel_cmd, self.prev_accel, ACCEL_WINDDOWN_LIMIT, ACCEL_WINDUP_LIMIT)
         self.prev_accel = pcm_accel_cmd
 
-        # calculate amount of acceleration PCM should apply to reach target, given pitch.
-        # clipped to only include downhill angles, avoids erroneously unsetting PERMIT_BRAKING when stopping on uphills
-        accel_due_to_pitch = math.sin(min(self.pitch.x, 0.0)) * ACCELERATION_DUE_TO_GRAVITY
+        # calculate amount of acceleration PCM should apply to reach target, given pitch
+        accel_due_to_pitch = math.sin(self.pitch.x) * ACCELERATION_DUE_TO_GRAVITY
         # TODO: on uphills this sometimes sets PERMIT_BRAKING low not considering the creep force
         net_acceleration_request = pcm_accel_cmd + accel_due_to_pitch
 

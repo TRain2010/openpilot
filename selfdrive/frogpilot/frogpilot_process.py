@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import datetime
-import json
+import threading
 import time
 
 import openpilot.system.sentry as sentry
@@ -18,24 +18,19 @@ from openpilot.selfdrive.frogpilot.assets.theme_manager import ThemeManager
 from openpilot.selfdrive.frogpilot.controls.frogpilot_planner import FrogPilotPlanner
 from openpilot.selfdrive.frogpilot.controls.lib.frogpilot_tracking import FrogPilotTracking
 from openpilot.selfdrive.frogpilot.frogpilot_functions import backup_toggles
-from openpilot.selfdrive.frogpilot.frogpilot_utilities import flash_panda, is_url_pingable, lock_doors, run_thread_with_lock, send_sentry_reports, update_maps, update_openpilot
-from openpilot.selfdrive.frogpilot.frogpilot_variables import CRASHES_DIR, FrogPilotVariables, get_frogpilot_toggles, params, params_memory
+from openpilot.selfdrive.frogpilot.frogpilot_utilities import flash_panda, is_url_pingable, lock_doors, run_thread_with_lock, update_maps, update_openpilot
+from openpilot.selfdrive.frogpilot.frogpilot_variables import FrogPilotVariables, get_frogpilot_toggles, params, params_memory
 
 def assets_checks(model_manager, theme_manager):
-  if params_memory.get_bool("DownloadAllModels"):
-    run_thread_with_lock("download_all_models", model_manager.download_all_models)
-
   if params_memory.get_bool("FlashPanda"):
     run_thread_with_lock("flash_panda", flash_panda)
+
+  if params_memory.get_bool("DownloadAllModels"):
+    run_thread_with_lock("download_all_models", model_manager.download_all_models)
 
   model_to_download = params_memory.get(MODEL_DOWNLOAD_PARAM, encoding='utf-8')
   if model_to_download is not None:
     run_thread_with_lock("download_model", model_manager.download_model, (model_to_download,))
-
-  report_data = json.loads(params_memory.get("IssueReported", encoding="utf-8") or "{}")
-  if report_data:
-    sentry.capture_report(report_data["DiscordUser"], report_data["Issue"], vars(get_frogpilot_toggles()))
-    params_memory.remove("IssueReported")
 
   assets = [
     ("ColorToDownload", "colors"),
@@ -65,11 +60,11 @@ def update_checks(manually_updated, model_manager, now, theme_manager, frogpilot
 def frogpilot_thread():
   config_realtime_process(5, Priority.CTRL_LOW)
 
-  error_log = CRASHES_DIR / "error.txt"
+  error_log = Path(sentry.CRASHES_DIR) / "error.txt"
   if error_log.is_file():
     error_log.unlink()
 
-  params_cache = Params("/cache")
+  params_storage = Params("/persist/params")
 
   frogpilot_planner = FrogPilotPlanner(error_log)
   frogpilot_tracking = FrogPilotTracking()
@@ -108,7 +103,7 @@ def frogpilot_thread():
       theme_updated = theme_manager.update_active_theme(time_validated, frogpilot_toggles)
 
       if time_validated:
-        run_thread_with_lock("backup_toggles", backup_toggles, (params_cache,))
+        run_thread_with_lock("backup_toggles", backup_toggles, (params_storage,))
 
       toggles_last_updated = now
     toggles_updated = (now - toggles_last_updated).total_seconds() <= 1
@@ -125,7 +120,7 @@ def frogpilot_thread():
       if frogpilot_toggles.lock_doors_timer != 0:
         run_thread_with_lock("lock_doors", lock_doors, (frogpilot_toggles.lock_doors_timer, sm))
     elif started and not started_previously:
-      run_thread_with_lock("send_sentry_reports", send_sentry_reports, (frogpilot_toggles, frogpilot_variables, params, frogpilot_tracking.params_tracking))
+      threading.Thread(target=sentry.capture_model, args=(frogpilot_toggles,)).start()
 
       radarless_model = frogpilot_toggles.radarless_model
 
@@ -156,7 +151,7 @@ def frogpilot_thread():
     manually_updated = params_memory.get_bool("ManualUpdateInitiated")
 
     run_update_checks |= manually_updated
-    run_update_checks |= now.second == 0 and (now.minute % 60 == 0 or (now.minute % 5 == 0 and frogpilot_toggles.frogs_go_moo))
+    run_update_checks |= now.second == 0 and (now.minute % 60 == 0 or now.minute % 5 == 0 and frogpilot_toggles.frogs_go_moo)
     run_update_checks &= time_validated
 
     if run_update_checks:
